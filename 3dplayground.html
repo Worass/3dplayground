@@ -1,0 +1,1038 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Game Dev Tech Ground - Retro Gritty</title>
+  <!-- Include SimplexNoise Library (fixes "SimplexNoise is not defined" error) -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/simplex-noise/2.4.0/simplex-noise.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@3.11.0/dist/tf.min.js" defer></script> <!-- TensorFlow.js -->
+  <style>
+    /* website tema*/
+    :root {
+      --primary-color: #00FF00;        /* Neon green */
+      --accent-color: #CCCCCC;
+      --background-color: #111111;       /* Deep dark background */
+      --hover-color: #FF6600;            /* Neon orange */
+      --nav-bg: #000000;                 /* Solid black nav */
+      --nav-text: #00FF00;               /* Neon green for nav text */
+      --border-style: 1px solid #444444;
+      --section-bg: #222222;             /* Dark sections */
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: "Courier New", Courier, monospace;
+      color: var(--accent-color);
+      background: var(--background-color);
+      min-height: 100vh;
+      overflow-x: hidden;
+      line-height: 1.6;
+    }
+    /* background neural network tipo */
+    #networkCanvas {
+      position: fixed;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      z-index: 0;
+      background: #000;
+    }
+    /* Navigation Bar */
+    .nav {
+      position: fixed;
+      top: 0; left: 0; right: 0;
+      background: var(--nav-bg);
+      border-bottom: var(--border-style);
+      z-index: 100;
+      display: flex;
+      justify-content: center;
+      gap: 20px;
+      padding: 15px 20px;
+    }
+    .nav-button {
+      background: none;
+      border: none;
+      color: var(--nav-text);
+      font-weight: bold;
+      text-transform: uppercase;
+      cursor: pointer;
+      font-size: 1rem;
+      position: relative;
+      overflow: hidden;
+      transition: color 0.3s, transform 0.3s;
+    }
+    .nav-button:hover {
+      color: var(--hover-color);
+      transform: scale(1.05);
+    }
+    .nav-button::after {
+      content: "";
+      position: absolute;
+      left: 50%;
+      bottom: -3px;
+      width: 0;
+      height: 2px;
+      background: var(--hover-color);
+      transition: width 0.3s, left 0.3s;
+    }
+    .nav-button:hover::after {
+      width: 100%;
+      left: 0;
+    }
+    .separator {
+      border: none;
+      border-top: var(--border-style);
+      width: 80%;
+      margin: 80px auto 20px;
+      z-index: 10;
+    }
+    .three-section {
+      position: relative;
+      z-index: 5;
+      width: 90%;
+      max-width: 1000px;
+      margin: 100px auto 40px;
+      padding: 20px;
+      background: var(--section-bg);
+      border: var(--border-style);
+      border-radius: 4px;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.7);
+    }
+    .three-section h2 {
+      font-size: 2rem;
+      margin-bottom: 15px;
+      text-transform: uppercase;
+      color: var(--nav-text);
+      text-align: center;
+      position: relative;
+      overflow: hidden;
+    }
+    .three-section h2::after {
+      content: "";
+      position: absolute;
+      left: 50%;
+      bottom: -5px;
+      width: 0;
+      height: 2px;
+      background: var(--hover-color);
+      transition: width 0.3s, left 0.3s;
+    }
+    .three-section h2:hover::after {
+      width: 100%;
+      left: 0;
+    }
+    .canvas-container {
+      width: 100%;
+      height: 400px;
+      border: var(--border-style);
+      background: #000;
+      position: relative;
+      margin-bottom: 20px;
+    }
+    .cube-controls, .boids-controls, .terrain-controls, .ai-controls {
+      text-align: center;
+      margin-top: 10px;
+    }
+    .cube-controls button,
+    .boids-controls button,
+    .terrain-controls button,
+    .ai-controls button,
+    .boids-controls input {
+      background: var(--primary-color);
+      color: #000;
+      border: var(--border-style);
+      padding: 8px 12px;
+      margin: 5px;
+      font-size: 0.9rem;
+      border-radius: 2px;
+      cursor: pointer;
+      transition: background 0.3s, transform 0.3s;
+    }
+    .cube-controls button:hover,
+    .boids-controls button:hover,
+    .terrain-controls button:hover,
+    .ai-controls button:hover,
+    .boids-controls input:hover {
+      background: var(--hover-color);
+      transform: translateY(-2px);
+    }
+    .param-group {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      max-width: 200px;
+      margin: 0 auto;
+    }
+    .param-group label { font-size: 0.9rem; }
+    .terrain-stats {
+      position: absolute;
+      bottom: 10px;
+      right: 10px;
+      background: rgba(0,0,0,0.85);
+      padding: 8px 12px;
+      border-radius: 2px;
+      font-size: 0.8rem;
+      border: var(--border-style);
+      color: var(--accent-color);
+    }
+  </style>
+</head>
+<body>
+  <!-- Neural Network Background Canvas -->
+  <canvas id="networkCanvas"></canvas>
+  
+  <!-- Navigation -->
+  <div class="nav">
+    <button class="nav-button" onclick="scrollToSection('home')">Home</button>
+    <button class="nav-button" onclick="scrollToSection('cube')">Cube</button>
+    <button class="nav-button" onclick="scrollToSection('boids')">Boids</button>
+    <button class="nav-button" onclick="scrollToSection('terrain')">Terrain</button>
+    <button class="nav-button" onclick="scrollToSection('aiNav')">AI Navigation</button>
+    <button class="nav-button" onclick="scrollToSection('about')">About</button>
+  </div>
+  
+  <hr class="separator" />
+  
+  <!-- Home Section -->
+  <section class="three-section" id="home">
+    <h2>Welcome to Game Dev Tech Ground</h2>
+    <p style="text-align:center;">Retro, Gritty, &amp; Experimental 3D Environments</p>
+  </section>
+  
+  <!-- Cube Showcase -->
+  <section class="three-section" id="cube">
+    <h2>3D Cube Showcase</h2>
+    <div class="canvas-container" id="threeContainer"></div>
+    <div class="cube-controls">
+      <button id="modifier1">Random Scale</button>
+      <button id="modifier2">Random Rotation</button>
+      <button id="modifier3">Random Color</button>
+      <button id="modifier4">Toggle Wireframe</button>
+      <button id="resetCube">Reset Cube</button>
+    </div>
+  </section>
+  
+  <!-- Boids Flocking Simulation -->
+  <section class="three-section" id="boids">
+    <h2>Boids Flocking Simulation</h2>
+    <div class="canvas-container" id="boidsContainer"></div>
+    <div class="boids-controls">
+      <button id="resetBoids">Reset Simulation</button>
+      <button id="addBoid">Add Boid</button>
+      <div class="param-group">
+        <label for="boidCount">Boid Count:</label>
+        <span id="boidCount">0</span>
+      </div>
+      <div class="param-group">
+        <label for="perceptionRadius">Perception:</label>
+        <input type="range" id="perceptionRadius" min="5" max="50" step="1" value="15">
+      </div>
+      <div class="param-group">
+        <label for="alignmentWeight">Alignment:</label>
+        <input type="range" id="alignmentWeight" min="0" max="2" step="0.1" value="1.0">
+      </div>
+      <div class="param-group">
+        <label for="cohesionWeight">Cohesion:</label>
+        <input type="range" id="cohesionWeight" min="0" max="2" step="0.1" value="0.8">
+      </div>
+      <div class="param-group">
+        <label for="separationWeight">Separation:</label>
+        <input type="range" id="separationWeight" min="0" max="3" step="0.1" value="1.5">
+      </div>
+    </div>
+  </section>
+  
+  <!-- Terrain Editor -->
+  <section class="three-section" id="terrain">
+    <h2>Terrain Editor</h2>
+    <div class="canvas-container" id="terrainContainer">
+      <div class="terrain-stats">
+        Vertices: <span id="vertexCount">0</span><br>
+        Triangles: <span id="triangleCount">0</span>
+      </div>
+    </div>
+    <div class="terrain-controls">
+      <button id="generateTerrain">Generate Terrain</button>
+      <button id="toggleWireframe">Toggle Wireframe</button>
+      <button id="resetTerrain">Reset</button>
+      <div class="param-group">
+        <label for="terrainSize">Size:</label>
+        <input type="number" id="terrainSize" min="16" max="256" value="64" step="16">
+      </div>
+      <div class="param-group">
+        <label for="terrainRoughness">Roughness:</label>
+        <input type="range" id="terrainRoughness" min="0.1" max="2.0" step="0.1" value="0.8">
+      </div>
+      <div class="param-group">
+        <label for="heightScale">Height Scale:</label>
+        <input type="range" id="heightScale" min="1" max="50" value="20">
+      </div>
+    </div>
+  </section>
+  
+  <!-- AI Navigation Environment -->
+  <section class="three-section" id="aiNav">
+    <h2>AI Navigation Environment</h2>
+    <div class="canvas-container" id="aiNavContainer"></div>
+    <div class="ai-controls">
+      <button id="generateMaze">Generate Maze</button>
+      <button id="spawnBlob">Spawn Blob</button>
+      <button id="resetBlob">Reset Blob</button>
+      <button id="resetMaze">Reset Maze</button>
+    </div>
+  </section>
+  
+  <!-- About Section -->
+  <section class="three-section" id="about">
+    <h2>About This Site</h2>
+    <p style="text-align:center; max-width:800px; margin:0 auto;">
+      Game Dev Tech Ground is a retro-inspired experimental hub for interactive 3D demos and AI simulations.
+      Enjoy a gritty early-internet vibe combined with modern 3D technology.
+    </p>
+  </section>
+  
+  <!-- Scripts -->
+  
+  <!-- Navigation Scroll Function -->
+
+  <script type="module" src="ai_blob_rl.js"></script>
+  <script>
+    function scrollToSection(id) {
+      document.getElementById(id).scrollIntoView({ behavior: "smooth" });
+    }
+  </script>
+  
+  <!-- Network Canvas Animation with Mouse Reaction -->
+  <script>
+    (function() {
+      const canvas = document.getElementById("networkCanvas");
+      const ctx = canvas.getContext("2d");
+      let mousePos = { x: -9999, y: -9999 };
+      canvas.addEventListener("mousemove", (e) => {
+        const rect = canvas.getBoundingClientRect();
+        mousePos.x = e.clientX - rect.left;
+        mousePos.y = e.clientY - rect.top;
+      });
+      canvas.addEventListener("mouseleave", () => {
+        mousePos.x = -9999;
+        mousePos.y = -9999;
+      });
+      function resizeCanvas() {
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+      }
+      window.addEventListener("resize", resizeCanvas);
+      resizeCanvas();
+      const nodes = [];
+      const numNodes = 200;
+      const bound = 1000;
+      for (let i = 0; i < numNodes; i++) {
+        nodes.push({
+          x: Math.random() * 2 * bound - bound,
+          y: Math.random() * 2 * bound - bound,
+          vx: (Math.random() - 0.5) * 0.3,
+          vy: (Math.random() - 0.5) * 0.3,
+        });
+      }
+      const connectionDistance = 150;
+      let lastTime = 0;
+      function animate(time) {
+        const deltaTime = time - lastTime;
+        lastTime = time;
+        nodes.forEach(node => {
+          node.x += node.vx * deltaTime * 0.05;
+          node.y += node.vy * deltaTime * 0.05;
+          if (node.x < -bound) node.x = bound;
+          if (node.x > bound) node.x = -bound;
+          if (node.y < -bound) node.y = bound;
+          if (node.y > bound) node.y = -bound;
+        });
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.save();
+        ctx.translate(canvas.width / 2, canvas.height / 2);
+        const hue = (time * 0.02) % 360;
+        for (let i = 0; i < nodes.length; i++) {
+          for (let j = i + 1; j < nodes.length; j++) {
+            const dx = nodes[i].x - nodes[j].x;
+            const dy = nodes[i].y - nodes[j].y;
+            const dist = Math.hypot(dx, dy);
+            if (dist < connectionDistance) {
+              const alpha = 1 - dist / connectionDistance;
+              ctx.strokeStyle = `hsla(${hue}, 80%, 60%, ${alpha * 0.7})`;
+              ctx.lineWidth = 1;
+              ctx.beginPath();
+              ctx.moveTo(nodes[i].x, nodes[i].y);
+              ctx.lineTo(nodes[j].x, nodes[j].y);
+              ctx.stroke();
+            }
+          }
+        }
+        nodes.forEach(node => {
+          let nodeColor = "rgba(0, 120, 215, 0.85)";
+          let nodeRadius = 2;
+          const nodeScreenX = node.x + canvas.width / 2;
+          const nodeScreenY = node.y + canvas.height / 2;
+          const dx = nodeScreenX - mousePos.x;
+          const dy = nodeScreenY - mousePos.y;
+          const distToMouse = Math.hypot(dx, dy);
+          if (distToMouse < 100) {
+            nodeColor = "rgba(255, 0, 0, 0.9)";
+            nodeRadius = 4;
+            ctx.strokeStyle = "rgba(255, 0, 0, 0.5)";
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.moveTo(nodeScreenX, nodeScreenY);
+            ctx.lineTo(mousePos.x, mousePos.y);
+            ctx.stroke();
+          }
+          ctx.beginPath();
+          ctx.arc(node.x, node.y, nodeRadius, 0, Math.PI * 2);
+          ctx.fillStyle = nodeColor;
+          ctx.shadowColor = "rgba(0, 120, 215, 0.8)";
+          ctx.shadowBlur = 15;
+          ctx.fill();
+          ctx.shadowBlur = 0;
+        });
+        ctx.restore();
+        requestAnimationFrame(animate);
+      }
+      requestAnimationFrame(animate);
+    })();
+  </script>
+  
+  <!-- Three.js & OrbitControls -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r134/three.min.js"></script>
+  <script src="https://unpkg.com/three@0.134.0/examples/js/controls/OrbitControls.js"></script>
+  
+  <!-- 3D Cube Showcase Script -->
+  <script>
+    (function() {
+      const container = document.getElementById("threeContainer");
+      const scene = new THREE.Scene();
+      const camera = new THREE.PerspectiveCamera(75, container.clientWidth / container.clientHeight, 0.1, 1000);
+      const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+      renderer.setSize(container.clientWidth, container.clientHeight);
+      container.appendChild(renderer.domElement);
+      const geometry = new THREE.BoxGeometry();
+      const material = new THREE.MeshStandardMaterial({
+        color: 0x0078d7,
+        metalness: 0.5,
+        roughness: 0.1
+      });
+      const cube = new THREE.Mesh(geometry, material);
+      scene.add(cube);
+      const edges = new THREE.EdgesGeometry(geometry);
+      const lineMaterial = new THREE.LineBasicMaterial({ color: 0xffffff });
+      const outline = new THREE.LineSegments(edges, lineMaterial);
+      cube.add(outline);
+      const originalCube = {
+        scale: cube.scale.clone(),
+        rotation: cube.rotation.clone(),
+        color: cube.material.color.getHex(),
+        wireframe: cube.material.wireframe
+      };
+      const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
+      scene.add(ambientLight);
+      const pointLight = new THREE.PointLight(0xffffff, 1);
+      pointLight.position.set(5, 5, 5);
+      scene.add(pointLight);
+      camera.position.set(3, 3, 3);
+      camera.lookAt(scene.position);
+      const controls = new THREE.OrbitControls(camera, renderer.domElement);
+      controls.enableDamping = true;
+      controls.dampingFactor = 0.05;
+      function animateCube() {
+        requestAnimationFrame(animateCube);
+        controls.update();
+        renderer.render(scene, camera);
+      }
+      animateCube();
+      window.addEventListener("resize", function() {
+        camera.aspect = container.clientWidth / container.clientHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(container.clientWidth, container.clientHeight);
+      });
+      function randomInRange(min, max) {
+        return Math.random() * (max - min) + min;
+      }
+      document.getElementById("modifier1").addEventListener("click", function() {
+        const newScale = randomInRange(0.5, 2.0);
+        cube.scale.set(newScale, newScale, newScale);
+      });
+      document.getElementById("modifier2").addEventListener("click", function() {
+        cube.rotation.set(
+          randomInRange(0, Math.PI * 2),
+          randomInRange(0, Math.PI * 2),
+          randomInRange(0, Math.PI * 2)
+        );
+      });
+      document.getElementById("modifier3").addEventListener("click", function() {
+        const randomColor = Math.floor(Math.random() * 0xffffff);
+        cube.material.color.setHex(randomColor);
+      });
+      document.getElementById("modifier4").addEventListener("click", function() {
+        cube.material.wireframe = !cube.material.wireframe;
+      });
+      document.getElementById("resetCube").addEventListener("click", function() {
+        cube.scale.copy(originalCube.scale);
+        cube.rotation.copy(originalCube.rotation);
+        cube.material.color.setHex(originalCube.color);
+        cube.material.wireframe = originalCube.wireframe;
+      });
+    })();
+  </script>
+  
+  <!-- Boids Flocking Simulation Script -->
+  <script>
+    (function() {
+      const container = document.getElementById("boidsContainer");
+      const scene = new THREE.Scene();
+      const camera = new THREE.PerspectiveCamera(75, container.clientWidth / container.clientHeight, 0.1, 1000);
+      const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+      renderer.setSize(container.clientWidth, container.clientHeight);
+      container.appendChild(renderer.domElement);
+      camera.position.set(0, 50, 100);
+      camera.lookAt(0, 0, 0);
+      const controls = new THREE.OrbitControls(camera, renderer.domElement);
+      controls.enableDamping = true;
+      controls.dampingFactor = 0.05;
+      const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
+      scene.add(ambientLight);
+      const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+      directionalLight.position.set(50, 50, 50);
+      scene.add(directionalLight);
+      let perceptionRadius = parseFloat(document.getElementById("perceptionRadius").value);
+      let alignmentWeight = parseFloat(document.getElementById("alignmentWeight").value);
+      let cohesionWeight = parseFloat(document.getElementById("cohesionWeight").value);
+      let separationWeight = parseFloat(document.getElementById("separationWeight").value);
+      document.getElementById("perceptionRadius").addEventListener("input", function() {
+        perceptionRadius = parseFloat(this.value);
+      });
+      document.getElementById("alignmentWeight").addEventListener("input", function() {
+        alignmentWeight = parseFloat(this.value);
+      });
+      document.getElementById("cohesionWeight").addEventListener("input", function() {
+        cohesionWeight = parseFloat(this.value);
+      });
+      document.getElementById("separationWeight").addEventListener("input", function() {
+        separationWeight = parseFloat(this.value);
+      });
+      class Boid {
+        constructor() {
+          this.position = new THREE.Vector3(
+            (Math.random() - 0.5) * 50,
+            (Math.random() - 0.5) * 50,
+            (Math.random() - 0.5) * 50
+          );
+          this.velocity = new THREE.Vector3(
+            (Math.random() - 0.5) * 2,
+            (Math.random() - 0.5) * 2,
+            (Math.random() - 0.5) * 2
+          );
+          this.acceleration = new THREE.Vector3(0, 0, 0);
+          this.maxSpeed = 2;
+          this.maxForce = 0.05;
+          const geometry = new THREE.ConeGeometry(1, 4, 8);
+          const material = new THREE.MeshStandardMaterial({ color: Math.random() * 0xffffff });
+          this.mesh = new THREE.Mesh(geometry, material);
+          this.mesh.position.copy(this.position);
+          this.mesh.rotation.x = Math.PI / 2;
+          scene.add(this.mesh);
+        }
+        
+        update(boids) {
+          this.acceleration.set(0, 0, 0);
+          let alignment = new THREE.Vector3();
+          let cohesion = new THREE.Vector3();
+          let separation = new THREE.Vector3();
+          let total = 0;
+          for (let other of boids) {
+            if (other === this) continue;
+            const d = this.position.distanceTo(other.position);
+            if (d < perceptionRadius) {
+              alignment.add(other.velocity);
+              cohesion.add(other.position);
+              let diff = new THREE.Vector3().subVectors(this.position, other.position);
+              diff.divideScalar(d);
+              separation.add(diff);
+              total++;
+            }
+          }
+          if (total > 0) {
+            alignment.divideScalar(total);
+            alignment.setLength(this.maxSpeed);
+            alignment.sub(this.velocity);
+            alignment.clampLength(0, this.maxForce);
+            cohesion.divideScalar(total);
+            cohesion.sub(this.position);
+            cohesion.setLength(this.maxSpeed);
+            cohesion.sub(this.velocity);
+            cohesion.clampLength(0, this.maxForce);
+            separation.divideScalar(total);
+            separation.setLength(this.maxSpeed);
+            separation.sub(this.velocity);
+            separation.clampLength(0, this.maxForce);
+            this.acceleration.add(alignment.multiplyScalar(alignmentWeight));
+            this.acceleration.add(cohesion.multiplyScalar(cohesionWeight));
+            this.acceleration.add(separation.multiplyScalar(separationWeight));
+          }
+          this.velocity.add(this.acceleration);
+          this.velocity.clampLength(0, this.maxSpeed);
+          this.position.add(this.velocity);
+          const boundary = 100;
+          if (this.position.x > boundary) this.position.x = -boundary;
+          else if (this.position.x < -boundary) this.position.x = boundary;
+          if (this.position.y > boundary) this.position.y = -boundary;
+          else if (this.position.y < -boundary) this.position.y = boundary;
+          if (this.position.z > boundary) this.position.z = -boundary;
+          else if (this.position.z < -boundary) this.position.z = boundary;
+          this.mesh.position.copy(this.position);
+          if (this.velocity.length() > 0.01) {
+            this.mesh.lookAt(this.position.clone().add(this.velocity));
+          }
+        }
+      }
+      
+      let boids = [];
+      const initialBoidCount = 30;
+      for (let i = 0; i < initialBoidCount; i++) {
+        boids.push(new Boid());
+      }
+      function updateBoidCount() {
+        document.getElementById("boidCount").textContent = boids.length;
+      }
+      updateBoidCount();
+      function animateBoids() {
+        requestAnimationFrame(animateBoids);
+        boids.forEach(boid => boid.update(boids));
+        controls.update();
+        renderer.render(scene, camera);
+      }
+      animateBoids();
+      document.getElementById("resetBoids").addEventListener("click", function() {
+        boids.forEach(boid => {
+          scene.remove(boid.mesh);
+          boid.mesh.geometry.dispose();
+          boid.mesh.material.dispose();
+        });
+        boids = [];
+        updateBoidCount();
+      });
+      document.getElementById("addBoid").addEventListener("click", function() {
+        boids.push(new Boid());
+        updateBoidCount();
+      });
+      window.addEventListener("resize", function() {
+        camera.aspect = container.clientWidth / container.clientHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(container.clientWidth, container.clientHeight);
+      });
+    })();
+  </script>
+  
+  <!-- Terrain Editor Script -->
+  <script>
+    (function() {
+      const container = document.getElementById("terrainContainer");
+      const scene = new THREE.Scene();
+      const camera = new THREE.PerspectiveCamera(75, container.clientWidth/container.clientHeight, 0.1, 1000);
+      const renderer = new THREE.WebGLRenderer({ antialias: true });
+      renderer.setSize(container.clientWidth, container.clientHeight);
+      container.appendChild(renderer.domElement);
+      let terrainMesh = null;
+      const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
+      scene.add(ambientLight);
+      const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+      directionalLight.position.set(100, 100, 50);
+      scene.add(directionalLight);
+      camera.position.set(0, 60, 100);
+      camera.lookAt(0, 0, 0);
+      const controls = new THREE.OrbitControls(camera, renderer.domElement);
+      controls.enableDamping = true;
+      controls.dampingFactor = 0.05;
+      function generateHeightMap(size, roughness) {
+        const heightMap = [];
+        const noise = new SimplexNoise();
+        for (let x = 0; x < size; x++) {
+          heightMap[x] = [];
+          for (let y = 0; y < size; y++) {
+            let elevation = 0;
+            let frequency = 1;
+            let amplitude = 1;
+            for (let i = 0; i < 6; i++) {
+              elevation += noise.noise2D((x / size) * frequency, (y / size) * frequency) * amplitude;
+              frequency *= 2;
+              amplitude *= roughness;
+            }
+            heightMap[x][y] = elevation;
+          }
+        }
+        return heightMap;
+      }
+      function createTerrain() {
+        if (terrainMesh) {
+          scene.remove(terrainMesh);
+          terrainMesh.geometry.dispose();
+          terrainMesh.material.dispose();
+          terrainMesh = null;
+        }
+        const size = parseInt(document.getElementById("terrainSize").value);
+        const heightScale = parseInt(document.getElementById("heightScale").value);
+        const roughness = parseFloat(document.getElementById("terrainRoughness").value);
+        const geometry = new THREE.PlaneGeometry(100, 100, size - 1, size - 1);
+        const heightMap = generateHeightMap(size, roughness);
+        const vertices = geometry.attributes.position.array;
+        for (let i = 0; i < vertices.length; i += 3) {
+          const x = (vertices[i] + 50) / 100 * (size - 1);
+          const y = (vertices[i + 1] + 50) / 100 * (size - 1);
+          const col = Math.floor(x);
+          const row = Math.floor(y);
+          const height = heightMap[col][row];
+          vertices[i + 2] = height * heightScale;
+        }
+        geometry.computeVertexNormals();
+        const material = new THREE.MeshPhongMaterial({
+          color: 0x88ff88,
+          wireframe: false,
+          flatShading: true
+        });
+        terrainMesh = new THREE.Mesh(geometry, material);
+        terrainMesh.rotation.x = -Math.PI / 2;
+        scene.add(terrainMesh);
+        document.getElementById("vertexCount").textContent = geometry.attributes.position.count;
+        document.getElementById("triangleCount").textContent = geometry.index.count / 3;
+      }
+      document.getElementById("generateTerrain").addEventListener("click", createTerrain);
+      document.getElementById("toggleWireframe").addEventListener("click", function() {
+        if (terrainMesh) terrainMesh.material.wireframe = !terrainMesh.material.wireframe;
+      });
+      document.getElementById("resetTerrain").addEventListener("click", function() {
+        document.getElementById("terrainSize").value = 64;
+        document.getElementById("heightScale").value = 20;
+        document.getElementById("terrainRoughness").value = 0.8;
+        createTerrain();
+      });
+      function animateTerrain() {
+        requestAnimationFrame(animateTerrain);
+        controls.update();
+        renderer.render(scene, camera);
+      }
+      animateTerrain();
+      createTerrain();
+    })();
+  </script>
+  
+  <!-- AI Navigation Environment Script -->
+  <script>
+    (function() {
+      const container = document.getElementById("aiNavContainer");
+      const scene = new THREE.Scene();
+      const camera = new THREE.PerspectiveCamera(75, container.clientWidth / container.clientHeight, 0.1, 1000);
+      const renderer = new THREE.WebGLRenderer({ antialias: true });
+      renderer.setSize(container.clientWidth, container.clientHeight);
+      container.appendChild(renderer.domElement);
+      const controls = new THREE.OrbitControls(camera, renderer.domElement);
+      controls.enableDamping = true;
+      controls.dampingFactor = 0.05;
+      camera.position.set(0, 50, 150);
+      camera.lookAt(0, 0, 0);
+      
+      // Maze variables
+      const cellSize = 10;
+      let mazeRows = 10, mazeCols = 10;
+      let mazeGrid = [];
+      let mazeGroup = new THREE.Group();
+      let finishMarker = null;
+      
+      // Blob (AI agent)
+      let blob = null;
+      let blobStart = new THREE.Vector3();
+      
+      // Maze generator (recursive backtracking)
+      function generateMaze(rows, cols) {
+        let grid = [];
+        for (let r = 0; r < rows; r++) {
+          let row = [];
+          for (let c = 0; c < cols; c++) {
+            row.push({
+              row: r,
+              col: c,
+              walls: { top: true, right: true, bottom: true, left: true },
+              visited: false
+            });
+          }
+          grid.push(row);
+        }
+        function getUnvisitedNeighbors(cell) {
+          let neighbors = [];
+          let { row, col } = cell;
+          if (row > 0 && !grid[row - 1][col].visited) neighbors.push(grid[row - 1][col]);
+          if (col < cols - 1 && !grid[row][col + 1].visited) neighbors.push(grid[row][col + 1]);
+          if (row < rows - 1 && !grid[row + 1][col].visited) neighbors.push(grid[row + 1][col]);
+          if (col > 0 && !grid[row][col - 1].visited) neighbors.push(grid[row][col - 1]);
+          return neighbors;
+        }
+        function removeWalls(current, next) {
+          let x = current.col - next.col;
+          let y = current.row - next.row;
+          if (x === 1) { current.walls.left = false; next.walls.right = false; }
+          else if (x === -1) { current.walls.right = false; next.walls.left = false; }
+          if (y === 1) { current.walls.top = false; next.walls.bottom = false; }
+          else if (y === -1) { current.walls.bottom = false; next.walls.top = false; }
+        }
+        let stack = [];
+        let current = grid[0][0];
+        current.visited = true;
+        while (true) {
+          let neighbors = getUnvisitedNeighbors(current);
+          if (neighbors.length > 0) {
+            let next = neighbors[Math.floor(Math.random() * neighbors.length)];
+            stack.push(current);
+            removeWalls(current, next);
+            next.visited = true;
+            current = next;
+          } else if (stack.length > 0) {
+            current = stack.pop();
+          } else {
+            break;
+          }
+        }
+        return grid;
+      }
+      
+      function buildMaze() {
+        if (mazeGroup) {
+          scene.remove(mazeGroup);
+          mazeGroup.traverse(child => {
+            if (child.isMesh) {
+              child.geometry.dispose();
+              child.material.dispose();
+            }
+          });
+          mazeGroup = new THREE.Group();
+        }
+        mazeGrid = generateMaze(mazeRows, mazeCols);
+        for (let r = 0; r < mazeRows; r++) {
+          for (let c = 0; c < mazeCols; c++) {
+            let cell = mazeGrid[r][c];
+            let x = c * cellSize;
+            let z = r * cellSize;
+            let wallThickness = 1;
+            let wallHeight = 10;
+            if (cell.walls.top) {
+              let geom = new THREE.BoxGeometry(cellSize, wallHeight, wallThickness);
+              let mat = new THREE.MeshBasicMaterial({ color: 0x888888 });
+              let wall = new THREE.Mesh(geom, mat);
+              wall.position.set(x + cellSize/2, wallHeight/2, z);
+              mazeGroup.add(wall);
+            }
+            if (cell.walls.right) {
+              let geom = new THREE.BoxGeometry(wallThickness, wallHeight, cellSize);
+              let mat = new THREE.MeshBasicMaterial({ color: 0x888888 });
+              let wall = new THREE.Mesh(geom, mat);
+              wall.position.set(x + cellSize, wallHeight/2, z + cellSize/2);
+              mazeGroup.add(wall);
+            }
+            if (cell.walls.bottom) {
+              let geom = new THREE.BoxGeometry(cellSize, wallHeight, wallThickness);
+              let mat = new THREE.MeshBasicMaterial({ color: 0x888888 });
+              let wall = new THREE.Mesh(geom, mat);
+              wall.position.set(x + cellSize/2, wallHeight/2, z + cellSize);
+              mazeGroup.add(wall);
+            }
+            if (cell.walls.left) {
+              let geom = new THREE.BoxGeometry(wallThickness, wallHeight, cellSize);
+              let mat = new THREE.MeshBasicMaterial({ color: 0x888888 });
+              let wall = new THREE.Mesh(geom, mat);
+              wall.position.set(x, wallHeight/2, z + cellSize/2);
+              mazeGroup.add(wall);
+            }
+          }
+        }
+        // Outer boundaries
+        let outerGeom1 = new THREE.BoxGeometry(mazeCols * cellSize, 10, 1);
+        let outerWall1 = new THREE.Mesh(outerGeom1, new THREE.MeshBasicMaterial({ color: 0x888888 }));
+        outerWall1.position.set((mazeCols * cellSize)/2, 5, 0);
+        mazeGroup.add(outerWall1);
+        let outerGeom2 = new THREE.BoxGeometry(mazeCols * cellSize, 10, 1);
+        let outerWall2 = new THREE.Mesh(outerGeom2, new THREE.MeshBasicMaterial({ color: 0x888888 }));
+        outerWall2.position.set((mazeCols * cellSize)/2, 5, mazeRows * cellSize);
+        mazeGroup.add(outerWall2);
+        let outerGeom3 = new THREE.BoxGeometry(1, 10, mazeRows * cellSize);
+        let outerWall3 = new THREE.Mesh(outerGeom3, new THREE.MeshBasicMaterial({ color: 0x888888 }));
+        outerWall3.position.set(0, 5, (mazeRows * cellSize)/2);
+        mazeGroup.add(outerWall3);
+        let outerGeom4 = new THREE.BoxGeometry(1, 10, mazeRows * cellSize);
+        let outerWall4 = new THREE.Mesh(outerGeom4, new THREE.MeshBasicMaterial({ color: 0x888888 }));
+        outerWall4.position.set(mazeCols * cellSize, 5, (mazeRows * cellSize)/2);
+        mazeGroup.add(outerWall4);
+        mazeGroup.position.x = - (mazeCols * cellSize) / 2;
+        mazeGroup.position.z = - (mazeRows * cellSize) / 2;
+        scene.add(mazeGroup);
+        // Set blob starting position at cell (0,0)
+        blobStart.set(cellSize/2, 2, cellSize/2);
+        spawnFinishMarker();
+      }
+      
+      function spawnFinishMarker() {
+        // Remove old finish marker if exists
+        if (finishMarker) {
+          scene.remove(finishMarker);
+          finishMarker.geometry.dispose();
+          finishMarker.material.dispose();
+          finishMarker = null;
+        }
+        // Choose a random cell (not the start cell)
+        let finishRow = Math.floor(Math.random() * mazeRows);
+        let finishCol = Math.floor(Math.random() * mazeCols);
+        if (finishRow === 0 && finishCol === 0) {
+          finishRow = mazeRows - 1;
+          finishCol = mazeCols - 1;
+        }
+        let x = finishCol * cellSize + cellSize / 2;
+        let z = finishRow * cellSize + cellSize / 2;
+        finishMarker = new THREE.Mesh(
+          new THREE.SphereGeometry(2, 16, 16),
+          new THREE.MeshBasicMaterial({ color: 0x00FF00 })
+        );
+        finishMarker.position.set(x - (mazeCols * cellSize) / 2, 2, z - (mazeRows * cellSize) / 2);
+        scene.add(finishMarker);
+      }
+      
+      function spawnBlob() {
+        if (blob) {
+          scene.remove(blob);
+          blob.geometry.dispose();
+          blob.material.dispose();
+          blob = null;
+        }
+        let geometry = new THREE.SphereGeometry(2, 16, 16);
+        let material = new THREE.MeshBasicMaterial({ color: 0xFF0000 });
+        blob = new THREE.Mesh(geometry, material);
+        blob.position.copy(blobStart);
+        blob.userData.velocity = new THREE.Vector3(1, 0, 0).normalize().multiplyScalar(1.5);
+        blob.userData.maxSpeed = 3;
+        blob.userData.qTable = {};
+        blob.userData.state = `${Math.floor(blob.position.x / cellSize)},${Math.floor(blob.position.z / cellSize)},${Math.floor(finishMarker.position.x / cellSize)},${Math.floor(finishMarker.position.z / cellSize)}`;
+        blob.userData.score = 0;
+        scene.add(blob);
+      }
+      
+      function resetBlob() {
+        if (blob) {
+          blob.position.copy(blobStart);
+          blob.userData.velocity.set(1, 0, 0).normalize().multiplyScalar(1.5);
+        }
+      }
+      function updateBlob(delta) {
+        // Q-learning parameters
+        const learningRate = 0.1;
+        const discountFactor = 0.9;
+        const explorationRate = 0.2;
+
+        // Get current state
+        const currentState = `${Math.floor(blob.position.x / cellSize)},${Math.floor(blob.position.z / cellSize)},${Math.floor(finishMarker.position.x / cellSize)},${Math.floor(finishMarker.position.z / cellSize)}`;
+
+        // Get possible actions
+        const actions = [
+          new THREE.Vector3(1, 0, 0),
+          new THREE.Vector3(-1, 0, 0),
+          new THREE.Vector3(0, 0, 1),
+          new THREE.Vector3(0, 0, -1)
+        ];
+
+        // Choose action
+        let action;
+        if (Math.random() < explorationRate || !blob.userData.qTable[currentState]) {
+          action = actions[Math.floor(Math.random() * actions.length)];
+        } else {
+          action = actions.reduce((bestAction, currentAction) => {
+            const qValue = blob.userData.qTable[currentState][currentAction.toArray().toString()] || 0;
+            const bestQValue = blob.userData.qTable[currentState][bestAction.toArray().toString()] || 0;
+            return qValue > bestQValue ? currentAction : bestAction;
+          }, actions[0]);
+        }
+
+        // Apply action
+        blob.userData.velocity.add(action).normalize().multiplyScalar(blob.userData.maxSpeed || 3);
+        blob.position.add(blob.userData.velocity.clone().multiplyScalar(delta));
+
+        // Get new state
+        const newState = `${Math.floor(blob.position.x / cellSize)},${Math.floor(blob.position.z / cellSize)},${Math.floor(finishMarker.position.x / cellSize)},${Math.floor(finishMarker.position.z / cellSize)}`;
+
+        // Calculate reward
+        let reward = -0.01; // Smaller penalty for each step
+        if (blob.position.distanceTo(finishMarker.position) < 5) {
+          reward = 5; // Reduced reward for reaching the goal
+          resetBlob();
+          spawnFinishMarker();
+        } else {
+          // Check collision with maze walls
+          let blobBox = new THREE.Box3().setFromObject(blob);
+          for (let wall of mazeGroup.children) {
+            let wallBox = new THREE.Box3().setFromObject(wall);
+            if (blobBox.intersectsBox(wallBox)) {
+              reward = -0.5; // Reduced penalty for hitting the wall
+              resetBlob();
+              break;
+            }
+          }
+        }
+
+        // Update Q-table
+        if (!blob.userData.qTable[currentState]) {
+          blob.userData.qTable[currentState] = {};
+        }
+        if (!blob.userData.qTable[newState]) {
+          blob.userData.qTable[newState] = {};
+        }
+        const oldQValue = blob.userData.qTable[currentState][action.toArray().toString()] || 0;
+        const maxFutureQValue = Math.max(...actions.map(a => blob.userData.qTable[newState][a.toArray().toString()] || 0));
+        const newQValue = oldQValue + learningRate * (reward + discountFactor * maxFutureQValue - oldQValue);
+        blob.userData.qTable[currentState][action.toArray().toString()] = newQValue;
+
+        // Update blob state
+        blob.userData.state = newState;
+      }
+
+      let clock = new THREE.Clock();
+      function animateAINav() {
+        requestAnimationFrame(animateAINav);
+        let delta = clock.getDelta();
+        updateBlob(delta);
+        controls.update();
+        renderer.render(scene, camera);
+      }
+
+      document.getElementById("generateMaze").addEventListener("click", buildMaze);
+      document.getElementById("spawnBlob").addEventListener("click", spawnBlob);
+      document.getElementById("resetBlob").addEventListener("click", resetBlob);
+      document.getElementById("resetMaze").addEventListener("click", function() {
+        if (blob) {
+          scene.remove(blob);
+          blob.geometry.dispose();
+          blob.material.dispose();
+          blob = null;
+        }
+        if (mazeGroup) {
+          scene.remove(mazeGroup);
+          mazeGroup.traverse(child => {
+            if (child.isMesh) {
+              child.geometry.dispose();
+              child.material.dispose();
+            }
+          });
+          mazeGroup = new THREE.Group();
+        }
+      });
+
+      buildMaze();
+      animateAINav();
+      window.addEventListener("resize", function() {
+        camera.aspect = container.clientWidth / container.clientHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(container.clientWidth, container.clientHeight);
+      });
+    })();
+  </script>
+</body>
+</html>
