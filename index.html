@@ -6,6 +6,8 @@
   <title>Game Dev Tech Ground - Retro Gritty</title>
   <!-- Include SimplexNoise Library (fixes "SimplexNoise is not defined" error) -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/simplex-noise/2.4.0/simplex-noise.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/perlin-noise/1.0.0/perlin-noise.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/worley-noise/1.0.0/worley-noise.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@3.11.0/dist/tf.min.js" defer></script> <!-- TensorFlow.js -->
   <style>
     /* website tema*/
@@ -174,6 +176,37 @@
       border: var(--border-style);
       color: var(--accent-color);
     }
+    #easterEgg {
+      display: none;
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      background: rgba(0, 0, 0, 0.8);
+      color: #00FF00;
+      padding: 20px;
+      border: 2px solid #00FF00;
+      border-radius: 10px;
+      z-index: 1000;
+      text-align: center;
+    }
+    #easterEgg h2 {
+      margin-bottom: 10px;
+    }
+    #easterEgg p {
+      margin-bottom: 20px;
+    }
+    #easterEgg button {
+      background: #00FF00;
+      color: #000;
+      border: none;
+      padding: 10px 20px;
+      cursor: pointer;
+      font-size: 1rem;
+    }
+    #easterEgg button:hover {
+      background: #FF6600;
+    }
   </style>
 </head>
 <body>
@@ -266,6 +299,22 @@
         <label for="heightScale">Height Scale:</label>
         <input type="range" id="heightScale" min="1" max="50" value="20">
       </div>
+      <div class="param-group">
+        <label for="terrainFrequency">Frequency:</label>
+        <input type="range" id="terrainFrequency" min="0.1" max="5.0" step="0.1" value="1.0">
+      </div>
+      <div class="param-group">
+        <label for="terrainAmplitude">Amplitude:</label>
+        <input type="range" id="terrainAmplitude" min="0.1" max="5.0" step="0.1" value="1.0">
+      </div>
+      <div class="param-group">
+        <label for="terrainNoiseType">Noise Type:</label>
+        <select id="terrainNoiseType">
+          <option value="simplex">Simplex</option>
+          <option value="perlin">Perlin</option>
+          <option value="worley">Worley</option>
+        </select>
+      </div>
     </div>
   </section>
   
@@ -289,6 +338,12 @@
       Enjoy a gritty early-internet vibe combined with modern 3D technology.
     </p>
   </section>
+  
+  <div id="easterEgg">
+    <h2>🎉 Easter Egg Found! 🎉</h2>
+    <p>Congratulations! You've discovered the hidden easter egg.</p>
+    <button onclick="document.getElementById('easterEgg').style.display='none'">Close</button>
+  </div>
   
   <!-- Scripts -->
   
@@ -401,7 +456,7 @@
   
   <!-- Three.js & OrbitControls -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r134/three.min.js"></script>
-  <script src="https://unpkg.com/three@0.134.0/examples/js/controls/OrbitControls.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.134.0/examples/js/controls/OrbitControls.js"></script>
   
   <!-- 3D Cube Showcase Script -->
   <script>
@@ -634,7 +689,7 @@
     (function() {
       const container = document.getElementById("terrainContainer");
       const scene = new THREE.Scene();
-      const camera = new THREE.PerspectiveCamera(75, container.clientWidth/container.clientHeight, 0.1, 1000);
+      const camera = new THREE.PerspectiveCamera(75, container.clientWidth / container.clientHeight, 0.1, 1000);
       const renderer = new THREE.WebGLRenderer({ antialias: true });
       renderer.setSize(container.clientWidth, container.clientHeight);
       container.appendChild(renderer.domElement);
@@ -649,25 +704,101 @@
       const controls = new THREE.OrbitControls(camera, renderer.domElement);
       controls.enableDamping = true;
       controls.dampingFactor = 0.05;
-      function generateHeightMap(size, roughness) {
+
+      // Perlin Noise implementation
+      function perlinNoise(x, y, seed = 0) {
+        x = (x + seed) % 256;
+        y = (y + seed) % 256;
+        let X = Math.floor(x) & 255,             // FIND INTEGER COORDINATES
+            Y = Math.floor(y) & 255,
+            x_fade = x - Math.floor(x),          // LEFT FADE
+            y_fade = y - Math.floor(y),          // BOTTOM FADE
+            // HASH COORDINATES OF THE VERTICES
+            hash = new Uint8Array(256),
+            p = new Uint8Array(512);
+        for (let i = 0; i < 256; i++) {
+          hash[i] = Math.floor(Math.random() * 256);
+        }
+        for (let i = 0; i < 512; i++) {
+          p[i] = hash[i & 255];
+        }
+        // INTERPOLATE
+        function fade(t) { return t * t * t * (t * (t * 6 - 15) + 10); }
+        function lerp(t, a, b) { return a + t * (b - a); }
+        function grad(hash, x, y, z) {
+          let h = hash & 15;                      // CONVERT LO 4 BITS OF HASH CODE
+          let u = h < 8 ? x : y,                 // into 12 gradient vectors
+              v = h < 4 ? y : h == 12 || h == 14 ? x : z;
+          return ((h & 1) == 0 ? u : -u) + ((h & 2) == 0 ? v : -v);
+        }
+        let n00 = grad(p[X + p[Y]], x_fade, y_fade, 0); // Top left corner
+        let n01 = grad(p[X + p[Y + 1]], x_fade, y_fade - 1, 0); // Bottom left corner
+        let n10 = grad(p[X + 1 + p[Y]], x_fade - 1, y_fade, 0); // Top right corner
+        let n11 = grad(p[X + 1 + p[Y + 1]], x_fade - 1, y_fade - 1, 0); // Bottom right corner
+        let x0 = lerp(fade(x_fade), n00, n10);
+        let x1 = lerp(fade(x_fade), n01, n11);
+        return lerp(fade(y_fade), x0, x1);
+      }
+
+      // Add this Worley noise fallback function in your Terrain Editor script
+      function worleyNoise(x, y) {
+        function randomVal(a, b) {
+          return Math.abs(Math.sin(a * 12.9898 + b * 78.233) * 43758.5453) % 1;
+        }
+        let xi = Math.floor(x);
+        let yi = Math.floor(y);
+        let minDist = Infinity;
+        for (let i = -1; i <= 1; i++) {
+          for (let j = -1; j <= 1; j++) {
+            let featureX = xi + i + randomVal(xi + i, yi + j);
+            let featureY = yi + j + randomVal(yi + j, xi + i);
+            let dx = x - featureX;
+            let dy = y - featureY;
+            let dist = Math.sqrt(dx * dx + dy * dy);
+            if (dist < minDist) minDist = dist;
+          }
+        }
+        return minDist;
+      }
+
+      function generateHeightMap(size, roughness, frequency, amplitude, noiseType) {
         const heightMap = [];
-        const noise = new SimplexNoise();
+        let noise;
+        if (noiseType === 'simplex') {
+          noise = new SimplexNoise();
+        } else if (noiseType === 'perlin') {
+          noise = {
+            noise2D: (x, y) => perlinNoise(x * frequency, y * frequency)
+          };
+        } else if (noiseType === 'worley') {
+          // Use the custom Worley fallback function
+          noise = {
+            get: (x, y) => worleyNoise(x * frequency, y * frequency)
+          };
+        }
         for (let x = 0; x < size; x++) {
           heightMap[x] = [];
           for (let y = 0; y < size; y++) {
             let elevation = 0;
-            let frequency = 1;
-            let amplitude = 1;
-            for (let i = 0; i < 6; i++) {
-              elevation += noise.noise2D((x / size) * frequency, (y / size) * frequency) * amplitude;
-              frequency *= 2;
-              amplitude *= roughness;
+            let freq = frequency;
+            let amp = amplitude;
+            for (let i = 0; i < 8; i++) {
+              if (noiseType === 'simplex') {
+                elevation += noise.noise2D((x / size) * freq, (y / size) * freq) * amp;
+              } else if (noiseType === 'perlin') {
+                elevation += noise.noise2D((x / size) * freq, (y / size) * freq) * amp;
+              } else if (noiseType === 'worley') {
+                elevation += noise.get((x / size) * freq, (y / size) * freq) * amp;
+              }
+              freq *= 2;
+              amp *= roughness;
             }
             heightMap[x][y] = elevation;
           }
         }
         return heightMap;
       }
+
       function createTerrain() {
         if (terrainMesh) {
           scene.remove(terrainMesh);
@@ -676,19 +807,45 @@
           terrainMesh = null;
         }
         const size = parseInt(document.getElementById("terrainSize").value);
-        const heightScale = parseInt(document.getElementById("heightScale").value);
+        const heightScale = parseFloat(document.getElementById("heightScale").value);
         const roughness = parseFloat(document.getElementById("terrainRoughness").value);
+        const frequency = parseFloat(document.getElementById("terrainFrequency").value);
+        const amplitude = parseFloat(document.getElementById("terrainAmplitude").value);
+        const noiseType = document.getElementById("terrainNoiseType").value;
+        
         const geometry = new THREE.PlaneGeometry(100, 100, size - 1, size - 1);
-        const heightMap = generateHeightMap(size, roughness);
+        let heightMap = generateHeightMap(size, roughness, frequency, amplitude, noiseType);
         const vertices = geometry.attributes.position.array;
+        
         for (let i = 0; i < vertices.length; i += 3) {
-          const x = (vertices[i] + 50) / 100 * (size - 1);
-          const y = (vertices[i + 1] + 50) / 100 * (size - 1);
-          const col = Math.floor(x);
-          const row = Math.floor(y);
-          const height = heightMap[col][row];
-          vertices[i + 2] = height * heightScale;
+          // Convert plane coordinates to heightMap grid coordinates
+          const gridX = (vertices[i] + 50) / 100 * (size - 1);
+          const gridY = (vertices[i + 1] + 50) / 100 * (size - 1);
+          
+          // Get the four surrounding grid indices
+          const x0 = Math.floor(gridX);
+          const y0 = Math.floor(gridY);
+          const x1 = Math.min(x0 + 1, size - 1);
+          const y1 = Math.min(y0 + 1, size - 1);
+          
+          // Compute the fractional part for interpolation
+          const fracX = gridX - x0;
+          const fracY = gridY - y0;
+          
+          // Retrieve the four corner height values
+          const h00 = heightMap[x0][y0];
+          const h10 = heightMap[x1][y0];
+          const h01 = heightMap[x0][y1];
+          const h11 = heightMap[x1][y1];
+          
+          // Bilinear interpolation
+          const h0 = h00 * (1 - fracX) + h10 * fracX;
+          const h1 = h01 * (1 - fracX) + h11 * fracX;
+          const heightValue = h0 * (1 - fracY) + h1 * fracY;
+          
+          vertices[i + 2] = heightValue * heightScale;
         }
+        
         geometry.computeVertexNormals();
         const material = new THREE.MeshPhongMaterial({
           color: 0x88ff88,
@@ -698,9 +855,11 @@
         terrainMesh = new THREE.Mesh(geometry, material);
         terrainMesh.rotation.x = -Math.PI / 2;
         scene.add(terrainMesh);
+        
         document.getElementById("vertexCount").textContent = geometry.attributes.position.count;
         document.getElementById("triangleCount").textContent = geometry.index.count / 3;
       }
+
       document.getElementById("generateTerrain").addEventListener("click", createTerrain);
       document.getElementById("toggleWireframe").addEventListener("click", function() {
         if (terrainMesh) terrainMesh.material.wireframe = !terrainMesh.material.wireframe;
@@ -709,13 +868,18 @@
         document.getElementById("terrainSize").value = 64;
         document.getElementById("heightScale").value = 20;
         document.getElementById("terrainRoughness").value = 0.8;
+        document.getElementById("terrainFrequency").value = 1.0;
+        document.getElementById("terrainAmplitude").value = 1.0;
+        document.getElementById("terrainNoiseType").value = 'simplex';
         createTerrain();
       });
+
       function animateTerrain() {
         requestAnimationFrame(animateTerrain);
         controls.update();
         renderer.render(scene, camera);
       }
+
       animateTerrain();
       createTerrain();
     })();
@@ -924,6 +1088,8 @@
         }
       }
       function updateBlob(delta) {
+        if (!blob) return; // Ensure blob is defined before updating
+
         // Q-learning parameters
         const learningRate = 0.1;
         const discountFactor = 0.9;
@@ -1033,6 +1199,14 @@
         renderer.setSize(container.clientWidth, container.clientHeight);
       });
     })();
+  </script>
+  
+  <script>
+    document.addEventListener('keydown', function(event) {
+      if (event.ctrlKey && event.shiftKey && event.key === 'E') {
+        document.getElementById('easterEgg').style.display = 'block';
+      }
+    });
   </script>
 </body>
 </html>
