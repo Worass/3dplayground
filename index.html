@@ -212,6 +212,19 @@
     #easterEgg button:hover {
       background: #FF6600;
     }
+
+    /* Responsive adjustments for small screens */
+    @media (max-width: 600px) {
+      .nav {
+        flex-wrap: wrap;
+        gap: 10px;
+        padding: calc(10px + env(safe-area-inset-top)) 10px;
+      }
+      .nav-button {
+        font-size: 0.8rem;
+        padding: 8px 10px;
+      }
+    }
   </style>
 </head>
 <body>
@@ -275,6 +288,12 @@
       <div class="param-group">
         <label for="separationWeight">Separation:</label>
         <input type="range" id="separationWeight" min="0" max="3" step="0.1" value="1.5">
+      </div>
+      <!-- Inside the Boids Flocking Simulation section -->
+      <div class="param-group" style="margin-top: 10px;">
+        <label for="numBoids">Spawn Count:</label>
+        <input type="number" id="numBoids" value="1" min="1" style="width:60px;">
+        <button id="spawnMultipleBoids">Spawn</button>
       </div>
     </div>
   </section>
@@ -691,6 +710,13 @@
       });
       document.getElementById("addBoid").addEventListener("click", function() {
         boids.push(new Boid());
+        updateBoidCount();
+      });
+      document.getElementById("spawnMultipleBoids").addEventListener("click", function() {
+        const count = parseInt(document.getElementById("numBoids").value);
+        for (let i = 0; i < count; i++) {
+          boids.push(new Boid());
+        }
         updateBoidCount();
       });
       window.addEventListener("resize", function() {
