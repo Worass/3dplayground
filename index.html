@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <title>Game Dev Tech Ground - Retro Gritty</title>
   <!-- Include SimplexNoise Library (fixes "SimplexNoise is not defined" error) -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/simplex-noise/2.4.0/simplex-noise.min.js"></script>
@@ -29,6 +29,10 @@
       min-height: 100vh;
       overflow-x: hidden;
       line-height: 1.6;
+      padding-top: env(safe-area-inset-top);
+      padding-bottom: env(safe-area-inset-bottom);
+      padding-left: env(safe-area-inset-left);
+      padding-right: env(safe-area-inset-right);
     }
     /* background neural network tipo */
     #networkCanvas {
@@ -49,6 +53,7 @@
       justify-content: center;
       gap: 20px;
       padding: 15px 20px;
+      padding-top: calc(15px + env(safe-area-inset-top));
     }
     .nav-button {
       background: none;
