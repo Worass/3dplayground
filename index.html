@@ -321,12 +321,28 @@
   <!-- AI Navigation Environment -->
   <section class="three-section" id="aiNav">
     <h2>AI Navigation Environment</h2>
-    <div class="canvas-container" id="aiNavContainer"></div>
+    <div class="canvas-container" id="aiNavContainer">
+      <!-- Debug overlay visible in debug mode -->
+      <div id="debugOverlay" style="position:absolute; top:10px; right:10px; background:rgba(255,255,255,0.8); padding:10px; display:none; font-size:0.9rem; color:#000;"></div>
+    </div>
     <div class="ai-controls">
       <button id="generateMaze">Generate Maze</button>
       <button id="spawnBlob">Spawn Blob</button>
       <button id="resetBlob">Reset Blob</button>
       <button id="resetMaze">Reset Maze</button>
+      <button id="toggleDebug">Toggle Debug</button>
+      <!-- New control for dynamic learning rate -->
+      <label style="margin-left:10px; color:#00FF00; font-size:0.9rem;">
+        <input type="checkbox" id="toggleDynamicLR" style="vertical-align:middle; margin-right:4px;">Dynamic Learning Rate
+      </label>
+      <div class="param-group" style="margin-top:10px;">
+        <label for="learningMeter" style="color:#00FF00;">Learning Level:</label>
+        <progress id="learningMeter" value="0" max="50" style="vertical-align:middle;"></progress>
+      </div>
+      <div class="param-group" style="margin-top:10px;">
+        <label for="awarenessMeter" style="color:#00FF00;">Awareness Level:</label>
+        <progress id="awarenessMeter" value="0" max="50" style="vertical-align:middle;"></progress>
+      </div>
     </div>
   </section>
   
@@ -341,10 +357,6 @@
   
   <div id="easterEgg">
     <h2>🎉 Easter Egg Found! 🎉</h2>
-    <p>Congratulations! You've discovered the hidden easter egg.</p>
-    <button onclick="document.getElementById('easterEgg').style.display='none'">Close</button>
-  </div>
-  
   <!-- Scripts -->
   
   <!-- Navigation Scroll Function -->
@@ -888,7 +900,48 @@
   <!-- AI Navigation Environment Script -->
   <script>
     (function() {
+      // Declare configuration variables first
+      let dynamicLearningEnabled = false;
+      const baseLearningRate = 0.1;
+      const explorationRate = 0.2;
+      
+      // Global variable to toggle debug mode.
+      let debugMode = false;
+      const debugOverlay = document.getElementById("debugOverlay");
+
       const container = document.getElementById("aiNavContainer");
+      let heatmapGroup = null; // Moved here, before buildMaze and createHeatmap
+
+      const qTableCanvas = document.createElement("canvas");
+      qTableCanvas.style.position = "absolute";
+      qTableCanvas.style.top = "0";
+      qTableCanvas.style.left = "0";
+      qTableCanvas.style.pointerEvents = "none";
+      qTableCanvas.width = container.clientWidth;
+      qTableCanvas.height = container.clientHeight;
+      container.appendChild(qTableCanvas);
+      const qTableCtx = qTableCanvas.getContext("2d");
+
+      function updateQTableOverlay() {
+        qTableCtx.clearRect(0, 0, qTableCanvas.width, qTableCanvas.height);
+        
+        const cellWidth = qTableCanvas.width / mazeCols;
+        const cellHeight = qTableCanvas.height / mazeRows;
+        
+        for (let r = 0; r < mazeRows; r++) {
+          for (let c = 0; c < mazeCols; c++) {
+            const stateKey = `${c},${r},${Math.floor(finishMarker.position.x / cellSize)},${Math.floor(finishMarker.position.z / cellSize)}`;
+            let maxQ = 0;
+            if (blob && blob.userData.qTable[stateKey]) {
+              maxQ = Math.max(...Object.values(blob.userData.qTable[stateKey]));
+            }
+            const intensity = Math.min(255, Math.floor(maxQ * 50));
+            qTableCtx.fillStyle = `rgba(0,${intensity},0,0.3)`;
+            qTableCtx.fillRect(c * cellWidth, r * cellHeight, cellWidth, cellHeight);
+          }
+        }
+      }
+
       const scene = new THREE.Scene();
       const camera = new THREE.PerspectiveCamera(75, container.clientWidth / container.clientHeight, 0.1, 1000);
       const renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -911,6 +964,9 @@
       let blob = null;
       let blobStart = new THREE.Vector3();
       
+      // New global variable to track visit counts for each maze cell.
+      let visitCounts = [];
+
       // Maze generator (recursive backtracking)
       function generateMaze(rows, cols) {
         let grid = [];
@@ -963,6 +1019,19 @@
         return grid;
       }
       
+      // Call this inside buildMaze() after the maze grid is recreated:
+      function initializeVisitCounts() {
+        visitCounts = [];
+        for (let r = 0; r < mazeRows; r++) {
+          const row = [];
+          for (let c = 0; c < mazeCols; c++) {
+            row.push(0);
+          }
+          visitCounts.push(row);
+        }
+      }
+
+      // Modify buildMaze(): (Insert initializeVisitCounts() at the end)
       function buildMaze() {
         if (mazeGroup) {
           scene.remove(mazeGroup);
@@ -1035,6 +1104,13 @@
         // Set blob starting position at cell (0,0)
         blobStart.set(cellSize/2, 2, cellSize/2);
         spawnFinishMarker();
+        // Initialize visit counts for the new maze.
+        initializeVisitCounts();
+        createHeatmap();
+        // Instead of directly calling updateMazeMaterials(mazeGroup);
+        if (window.updateMazeMaterials) {
+            window.updateMazeMaterials(mazeGroup);
+        }
       }
       
       function spawnFinishMarker() {
@@ -1062,6 +1138,9 @@
         scene.add(finishMarker);
       }
       
+      // Declare a global variable to hold the ghost trail line.
+      let ghostTrailLine = null;
+
       function spawnBlob() {
         if (blob) {
           scene.remove(blob);
@@ -1078,6 +1157,8 @@
         blob.userData.qTable = {};
         blob.userData.state = `${Math.floor(blob.position.x / cellSize)},${Math.floor(blob.position.z / cellSize)},${Math.floor(finishMarker.position.x / cellSize)},${Math.floor(finishMarker.position.z / cellSize)}`;
         blob.userData.score = 0;
+        // Initialize the ghost trail array.
+        blob.userData.trail = [];
         scene.add(blob);
       }
       
@@ -1087,13 +1168,19 @@
           blob.userData.velocity.set(1, 0, 0).normalize().multiplyScalar(1.5);
         }
       }
+      // Place these at the top of your IIFE to ensure they're defined before any function uses them.
+      // let dynamicLearningEnabled = false;
+      // const baseLearningRate = 0.1;
+      // const explorationRate = 0.2;
+
       function updateBlob(delta) {
         if (!blob) return; // Ensure blob is defined before updating
 
         // Q-learning parameters
-        const learningRate = 0.1;
         const discountFactor = 0.9;
-        const explorationRate = 0.2;
+        const learningRate = dynamicLearningEnabled
+          ? baseLearningRate * (1 / (1 + (blob.userData.score || 0) / 10))
+          : baseLearningRate;
 
         // Get current state
         const currentState = `${Math.floor(blob.position.x / cellSize)},${Math.floor(blob.position.z / cellSize)},${Math.floor(finishMarker.position.x / cellSize)},${Math.floor(finishMarker.position.z / cellSize)}`;
@@ -1126,20 +1213,43 @@
         const newState = `${Math.floor(blob.position.x / cellSize)},${Math.floor(blob.position.z / cellSize)},${Math.floor(finishMarker.position.x / cellSize)},${Math.floor(finishMarker.position.z / cellSize)}`;
 
         // Calculate reward
-        let reward = -0.01; // Smaller penalty for each step
-        if (blob.position.distanceTo(finishMarker.position) < 5) {
-          reward = 5; // Reduced reward for reaching the goal
+        let reward = -0.01; // Step penalty
+        const distanceToGoal = blob.position.distanceTo(finishMarker.position);
+
+        // Declare dotProduct variable here so it's available later.
+        let dotProduct = 0;
+
+        if (distanceToGoal < 5) {
+          reward = 10; // Reward for reaching the goal
           resetBlob();
           spawnFinishMarker();
         } else {
-          // Check collision with maze walls
+          // Check if blob is moving in the right direction toward the finish marker.
+          const toGoal = new THREE.Vector3().subVectors(finishMarker.position, blob.position).normalize();
+          const velocityNorm = blob.userData.velocity.clone().normalize();
+          dotProduct = velocityNorm.dot(toGoal);
+          // Bonus reward for being well-oriented.
+          if (dotProduct > 0.8) {
+            reward += 0.1;
+          }
+          // Check collision with maze walls...
           let blobBox = new THREE.Box3().setFromObject(blob);
+          let collided = false;
           for (let wall of mazeGroup.children) {
             let wallBox = new THREE.Box3().setFromObject(wall);
             if (blobBox.intersectsBox(wallBox)) {
-              reward = -0.5; // Reduced penalty for hitting the wall
+              reward = -0.5; // Penalty for hitting a wall
               resetBlob();
+              collided = true;
               break;
+            }
+          }
+          // Use a raycaster to detect a wall ahead if no collision occurred.
+          if (!collided) {
+            const raycaster = new THREE.Raycaster(blob.position, blob.userData.velocity.clone().normalize());
+            const intersections = raycaster.intersectObjects(mazeGroup.children);
+            if (intersections.length > 0 && intersections[0].distance < cellSize) {
+              reward -= 0.2;
             }
           }
         }
@@ -1158,13 +1268,71 @@
 
         // Update blob state
         blob.userData.state = newState;
+
+        // Update visit counts for visualization.
+        let colIndex = Math.floor((blob.position.x + (mazeCols * cellSize) / 2) / cellSize);
+        let rowIndex = Math.floor((blob.position.z + (mazeRows * cellSize) / 2) / cellSize);
+        if (rowIndex >= 0 && rowIndex < mazeRows && colIndex >= 0 && colIndex < mazeCols) {
+          visitCounts[rowIndex][colIndex]++;
+        }
+
+        // Record the blob's current position for the ghost trail.
+        if (!blob.userData.trail) blob.userData.trail = [];
+        blob.userData.trail.push(blob.position.clone());
+        if (blob.userData.trail.length > 50) {
+          blob.userData.trail.shift();
+        }
+
+        // Update score
+        if (reward > 0) {
+          blob.userData.score = (blob.userData.score || 0) + reward;
+        } else {
+          blob.userData.score = Math.max(0, (blob.userData.score || 0) + reward);
+        }
+        document.getElementById("learningMeter").value = Math.min(blob.userData.score, 50);
+
+        // Compute awareness based on dotProduct and update the awareness meter.
+        const awarenessValue = Math.floor(Math.max(0, Math.min(1, dotProduct)) * 50);
+        document.getElementById("awarenessMeter").value = awarenessValue;
+
+        updateHeatmap();
+        updateDebugInfo();
+      }
+
+      // New function to update and render the ghost trail:
+      function updateGhostTrail() {
+        if (!blob || !blob.userData.trail) return;
+        
+        // Remove the old trail line if it exists.
+        if (ghostTrailLine) {
+          scene.remove(ghostTrailLine);
+          ghostTrailLine.geometry.dispose();
+          ghostTrailLine.material.dispose();
+          ghostTrailLine = null;
+        }
+        
+        // Create geometry from the trail points.
+        const trailGeometry = new THREE.BufferGeometry().setFromPoints(blob.userData.trail);
+        const trailMaterial = new THREE.LineBasicMaterial({
+          color: 0xff00ff,
+          linewidth: 2,
+          transparent: true,
+          opacity: 0.5
+        });
+        ghostTrailLine = new THREE.Line(trailGeometry, trailMaterial);
+        scene.add(ghostTrailLine);
       }
 
       let clock = new THREE.Clock();
       function animateAINav() {
         requestAnimationFrame(animateAINav);
         let delta = clock.getDelta();
+        if (window.updateReactiveMaterial) {
+          window.updateReactiveMaterial(delta);
+        }
         updateBlob(delta);
+        updateGhostTrail();
+        updateQTableOverlay();  // Updated once per frame.
         controls.update();
         renderer.render(scene, camera);
       }
@@ -1198,6 +1366,123 @@
         camera.updateProjectionMatrix();
         renderer.setSize(container.clientWidth, container.clientHeight);
       });
+
+      function createHeatmap() {
+        if (heatmapGroup) {
+          scene.remove(heatmapGroup);
+          heatmapGroup.traverse(child => {
+            if (child.isMesh) {
+              child.geometry.dispose();
+              child.material.dispose();
+            }
+          });
+        }
+        heatmapGroup = new THREE.Group();
+        // Create a heatmap plane for each maze cell.
+        for (let r = 0; r < mazeRows; r++) {
+          for (let c = 0; c < mazeCols; c++) {
+            let geometry = new THREE.PlaneGeometry(cellSize, cellSize);
+            let material = new THREE.MeshBasicMaterial({
+              color: 0x0000ff,
+              transparent: true,
+              opacity: 0.5,
+              side: THREE.DoubleSide
+            });
+            let plane = new THREE.Mesh(geometry, material);
+            // Position the plane over the corresponding cell.
+            plane.position.set(
+              c * cellSize + cellSize / 2 - (mazeCols * cellSize) / 2,
+              11, // Height slightly above the maze walls (wall height is 10)
+              r * cellSize + cellSize / 2 - (mazeRows * cellSize) / 2
+            );
+            plane.rotation.x = -Math.PI / 2;
+            heatmapGroup.add(plane);
+          }
+        }
+        scene.add(heatmapGroup);
+      }
+
+      // New updateHeatmap() that uses visitCounts instead of Q‑values:
+      function updateHeatmap() {
+        if (!blob || !heatmapGroup) return;
+        
+        // Determine the maximum visit count to normalize the intensity.
+        let maxVisits = 0;
+        for (let r = 0; r < mazeRows; r++) {
+          for (let c = 0; c < mazeCols; c++) {
+            if (visitCounts[r][c] > maxVisits) {
+              maxVisits = visitCounts[r][c];
+            }
+          }
+        }
+        
+        // Update each heatmap plane’s color (blue for low visits, red for high).
+        heatmapGroup.children.forEach((plane, idx) => {
+          let c = idx % mazeCols;
+          let r = Math.floor(idx / mazeCols);
+          let count = visitCounts[r][c];
+          let intensity = maxVisits > 0 ? count / maxVisits : 0;
+          let red = intensity;      // more visits → redder
+          let blue = 1 - intensity; // fewer visits → bluer
+          plane.material.color.setRGB(red, 0, blue);
+        });
+      }
+
+      // Global variable to toggle debug mode.
+      // let debugMode = false;
+      // const debugOverlay = document.getElementById("debugOverlay");
+
+      // New global variable for dynamic learning rate.
+      // let dynamicLearningEnabled = false;
+      // const baseLearningRate = 0.1;
+      // const explorationRate = 0.2;
+
+      // Toggle dynamic learning via the new checkbox.
+      document.getElementById("toggleDynamicLR").addEventListener("change", function(e) {
+        dynamicLearningEnabled = e.target.checked;
+      });
+
+      // Modify your blob parameters by adding, for example, a new random speed modifier:
+      function randomizeBlobSpeed() {
+        if (blob) {
+          const newSpeed = Math.random() * 2 + 1; // new speed between 1 and 3
+          blob.userData.maxSpeed = newSpeed;
+        }
+      }
+
+      // Add event listener for the debug toggle button.
+      document.getElementById("toggleDebug").addEventListener("click", function() {
+        debugMode = !debugMode;
+        debugOverlay.style.display = debugMode ? "block" : "none";
+      });
+      
+      // Optionally add a new button for the blob modifier.
+      // e.g., You could add a "Randomize Speed" button in the AI controls.
+      // Note: Add the button in HTML and then handle it here.
+      // Example (if added):
+      // document.getElementById("randomizeBlobSpeed").addEventListener("click", randomizeBlobSpeed);
+
+      // Function to update the debug overlay information.
+      function updateDebugInfo() {
+        if (debugMode) {
+          if (blob) {
+            const currentLearningRate = dynamicLearningEnabled
+              ? baseLearningRate * (1 / (1 + (blob.userData.score || 0) / 10))
+              : baseLearningRate;
+            debugOverlay.innerHTML = `
+              <strong>Blob Debug Info</strong><br>
+              Position: (${blob.position.x.toFixed(2)}, ${blob.position.y.toFixed(2)}, ${blob.position.z.toFixed(2)})<br>
+              Velocity: (${blob.userData.velocity.x.toFixed(2)}, ${blob.userData.velocity.y.toFixed(2)}, ${blob.userData.velocity.z.toFixed(2)})<br>
+              State: ${blob.userData.state}<br>
+              Score: ${blob.userData.score || 0}<br>
+              Learning Rate: ${currentLearningRate.toFixed(3)}<br>
+              Exploration Rate: ${explorationRate}
+            `;
+          } else {
+            debugOverlay.innerHTML = `<strong>Debug Info:</strong><br>Blob not spawned.`;
+          }
+        }
+      }
     })();
   </script>
   
@@ -1207,6 +1492,66 @@
         document.getElementById('easterEgg').style.display = 'block';
       }
     });
+  </script>
+
+  <script>
+    (function() {
+      // Define custom shader for maze walls.
+      const vertexShader = /* glsl */`
+        varying vec2 vUv;
+        void main() {
+          vUv = uv;
+          gl_Position = projectionMatrix * modelViewMatrix * vec4( position, 1.0 );
+        }
+      `;
+
+      const fragmentShader = /* glsl */`
+        uniform float time;
+        uniform float visitIntensity;
+        uniform vec3 baseColor;
+        varying vec2 vUv;
+        void main() {
+          // Generate a dynamic effect based on UVs, time, and visit intensity.
+          float effect = sin(vUv.x * 10.0 + time) * cos(vUv.y * 10.0 + time);
+          effect = effect * 0.5 + 0.5;
+          // Mix base color with a red tint when visitIntensity is high.
+          vec3 dynamicColor = mix(baseColor, vec3(1.0, 0.0, 0.0), visitIntensity);
+          gl_FragColor = vec4(dynamicColor * effect, 1.0);
+        }
+      `;
+
+      // Create the shader material.
+      const reactiveMaterial = new THREE.ShaderMaterial({
+        vertexShader: vertexShader,
+        fragmentShader: fragmentShader,
+        uniforms: {
+          time: { value: 0 },
+          visitIntensity: { value: 0 },  // This could be tailored to cell visit count.
+          baseColor: { value: new THREE.Color(0x888888) }
+        }
+      });
+
+      // Function to assign the reactive material to maze walls.
+      function updateMazeMaterials(mazeGroup) {
+        mazeGroup.traverse(child => {
+          if (child.isMesh) {
+            child.material = reactiveMaterial;
+          }
+        });
+      }
+
+      // Hook into your render loop to update the time uniform.
+      function updateReactiveMaterial(delta) {
+        reactiveMaterial.uniforms.time.value += delta;
+        // Optionally, update visitIntensity, perhaps averaging visit counts across cells.
+        // For example:
+        // reactiveMaterial.uniforms.visitIntensity.value = someCalculatedValue;
+      }
+
+      // Expose these functions to use in your existing maze generation flow.
+      window.updateReactiveMaterial = updateReactiveMaterial;
+      window.updateMazeMaterials = updateMazeMaterials;
+    })();
   </script>
 </body>
 </html>
