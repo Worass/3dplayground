@@ -225,6 +225,53 @@
         padding: 8px 10px;
       }
     }
+
+    /* Add to your existing CSS */
+    .info-tooltip {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      width: 24px;
+      height: 24px;
+      background: rgba(128, 128, 128, 0.8);
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      z-index: 10;
+      transition: background-color 0.3s;
+    }
+
+    .info-tooltip:hover {
+      background: rgba(160, 160, 160, 0.9);
+    }
+
+    .info-tooltip::after {
+      content: "?";
+      color: #000;
+      font-weight: bold;
+      font-size: 14px;
+    }
+
+    .tooltip-content {
+      display: none;
+      position: absolute;
+      top: 40px;
+      right: 10px;
+      width: 250px;
+      padding: 15px;
+      background: rgba(0, 0, 0, 0.9);
+      border: 1px solid var(--primary-color);
+      border-radius: 4px;
+      color: var(--accent-color);
+      font-size: 0.9rem;
+      z-index: 100;
+    }
+
+    .tooltip-content.active {
+      display: block;
+    }
   </style>
 </head>
 <body>
@@ -252,7 +299,18 @@
   <!-- Cube Showcase -->
   <section class="three-section" id="cube">
     <h2>3D Cube Showcase</h2>
-    <div class="canvas-container" id="threeContainer"></div>
+    <div class="canvas-container" id="threeContainer">
+      <div class="info-tooltip" data-tooltip="cube-info"></div>
+      <div class="tooltip-content" id="cube-info">
+        <h4>3D Cube Showcase</h4>
+        <p>Interactive 3D cube with modifiable properties:
+        - Scale randomly
+        - Rotate randomly
+        - Change colors
+        - Toggle wireframe mode
+        Use mouse/touch to orbit around the cube.</p>
+      </div>
+    </div>
     <div class="cube-controls">
       <button id="modifier1">Random Scale</button>
       <button id="modifier2">Random Rotation</button>
@@ -265,7 +323,18 @@
   <!-- Boids Flocking Simulation -->
   <section class="three-section" id="boids">
     <h2>Boids Flocking Simulation</h2>
-    <div class="canvas-container" id="boidsContainer"></div>
+    <div class="canvas-container" id="boidsContainer">
+      <div class="info-tooltip" data-tooltip="boids-info"></div>
+      <div class="tooltip-content" id="boids-info">
+        <h4>Boids Flocking Simulation</h4>
+        <p>Simulates flocking behavior of birds/fish:
+        - Adjust perception radius
+        - Modify alignment, cohesion, and separation
+        - Add/remove boids
+        - Reset simulation
+        Watch how the boids interact and form patterns.</p>
+      </div>
+    </div>
     <div class="boids-controls">
       <button id="resetBoids">Reset Simulation</button>
       <button id="addBoid">Add Boid</button>
@@ -302,6 +371,16 @@
   <section class="three-section" id="terrain">
     <h2>Terrain Editor</h2>
     <div class="canvas-container" id="terrainContainer">
+      <div class="info-tooltip" data-tooltip="terrain-info"></div>
+      <div class="tooltip-content" id="terrain-info">
+        <h4>Terrain Generator</h4>
+        <p>Procedural terrain generation with:
+        - Multiple noise types (Simplex, Perlin, Worley)
+        - Adjustable roughness and height
+        - Frequency and amplitude controls
+        - Realistic erosion simulation
+        Generate unique landscapes with various parameters.</p>
+      </div>
       <div class="terrain-stats">
         Vertices: <span id="vertexCount">0</span><br>
         Triangles: <span id="triangleCount">0</span>
@@ -346,6 +425,16 @@
   <section class="three-section" id="aiNav">
     <h2>AI Navigation Environment</h2>
     <div class="canvas-container" id="aiNavContainer">
+      <div class="info-tooltip" data-tooltip="ai-nav-info"></div>
+      <div class="tooltip-content" id="ai-nav-info">
+        <h4>AI Navigation Environment</h4>
+        <p>Q-learning based AI navigation:
+        - Watch AI learn optimal paths
+        - Dynamic learning rate adjustment
+        - Visual feedback with heatmaps
+        - Debug mode for detailed information
+        Observe how the AI learns to navigate through the maze.</p>
+      </div>
       <!-- Debug overlay visible in debug mode -->
       <div id="debugOverlay" style="position:absolute; top:10px; right:10px; background:rgba(255,255,255,0.8); padding:10px; display:none; font-size:0.9rem; color:#000;"></div>
     </div>
@@ -842,6 +931,54 @@
         return heightMap;
       }
 
+      // Add after the existing heightMap generation in the Terrain Editor script
+      function applyHydraulicErosion(heightMap, iterations = 5000) {
+        const size = heightMap.length;
+        const waterMap = Array(size).fill().map(() => Array(size).fill(0));
+        const sedimentMap = Array(size).fill().map(() => Array(size).fill(0));
+        
+        const params = {
+            rainAmount: 1,
+            solubility: 0.01,
+            evaporation: 0.5,
+            capacity: 4
+        };
+
+        for(let i = 0; i < iterations; i++) {
+            // Random droplet position
+            const x = Math.floor(Math.random() * (size-2)) + 1;
+            const y = Math.floor(Math.random() * (size-2)) + 1;
+            
+            waterMap[y][x] += params.rainAmount;
+            
+            // Calculate gradient and move water
+            const gradient = [
+                heightMap[y][x] - heightMap[y-1][x],
+                heightMap[y][x] - heightMap[y+1][x],
+                heightMap[y][x] - heightMap[y][x-1],
+                heightMap[y][x] - heightMap[y][x+1]
+            ];
+            
+            // Erode and deposit
+            const slope = Math.max(...gradient);
+            if(slope > 0) {
+                const erosion = Math.min(slope * params.solubility * waterMap[y][x], 
+                                       params.capacity - sedimentMap[y][x]);
+                heightMap[y][x] -= erosion;
+                sedimentMap[y][x] += erosion;
+            } else {
+                heightMap[y][x] += sedimentMap[y][x];
+                sedimentMap[y][x] = 0;
+            }
+            
+            // Evaporate
+            waterMap[y][x] *= (1 - params.evaporation);
+        }
+        
+        return heightMap;
+      }
+
+      // Modify the createTerrain() function to include erosion and better coloring
       function createTerrain() {
         if (terrainMesh) {
           scene.remove(terrainMesh);
@@ -858,6 +995,7 @@
         
         const geometry = new THREE.PlaneGeometry(100, 100, size - 1, size - 1);
         let heightMap = generateHeightMap(size, roughness, frequency, amplitude, noiseType);
+        heightMap = applyHydraulicErosion(heightMap);
         const vertices = geometry.attributes.position.array;
         
         for (let i = 0; i < vertices.length; i += 3) {
@@ -890,12 +1028,39 @@
         }
         
         geometry.computeVertexNormals();
-        const material = new THREE.MeshPhongMaterial({
-          color: 0x88ff88,
-          wireframe: false,
+        
+        // Add height-based coloring
+        const terrainMaterial = new THREE.MeshStandardMaterial({
+          vertexColors: true,
           flatShading: true
         });
-        terrainMesh = new THREE.Mesh(geometry, material);
+        
+        const colors = [];
+        
+        for(let i = 0; i < vertices.length; i += 3) {
+            const height = vertices[i + 2];
+            let color = new THREE.Color();
+            
+            if(height < 0) {
+                color.setStyle('#001b48'); // Deep water
+            } else if(height < 2) {
+                color.setStyle('#0077be'); // Shallow water
+            } else if(height < 4) {
+                color.setStyle('#c2b280'); // Sand
+            } else if(height < 12) {
+                color.setStyle('#228b22'); // Forest
+            } else if(height < 20) {
+                color.setStyle('#808080'); // Mountain
+            } else {
+                color.setStyle('#ffffff'); // Snow
+            }
+            
+            colors.push(color.r, color.g, color.b);
+        }
+        
+        geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+        
+        terrainMesh = new THREE.Mesh(geometry, terrainMaterial);
         terrainMesh.rotation.x = -Math.PI / 2;
         scene.add(terrainMesh);
         
@@ -1583,6 +1748,128 @@
       window.updateReactiveMaterial = updateReactiveMaterial;
       window.updateMazeMaterials = updateMazeMaterials;
     })();
+  </script>
+
+  <script>
+    // Add this script after your existing scripts
+    document.addEventListener('DOMContentLoaded', function() {
+      const tooltips = document.querySelectorAll('.info-tooltip');
+      
+      tooltips.forEach(tooltip => {
+        tooltip.addEventListener('click', function(e) {
+          e.stopPropagation();
+          const tooltipId = this.getAttribute('data-tooltip');
+          const tooltipContent = document.getElementById(tooltipId);
+          
+          // Close any open tooltips
+          document.querySelectorAll('.tooltip-content.active').forEach(tip => {
+            if (tip.id !== tooltipId) {
+              tip.classList.remove('active');
+            }
+          });
+          
+          tooltipContent.classList.toggle('active');
+        });
+      });
+      
+      // Close tooltip when clicking outside
+      document.addEventListener('click', function(e) {
+        if (!e.target.closest('.info-tooltip') && !e.target.closest('.tooltip-content')) {
+          document.querySelectorAll('.tooltip-content.active').forEach(tip => {
+            tip.classList.remove('active');
+          });
+        }
+      });
+    });
+  </script>
+
+  <script>
+    // Replace the existing createCursorTrail function with this version
+    function createCursorTrail() {
+      const trail = [];
+      const trailLength = 15;
+      let isOverEnvironment = false;
+      let lastX = 0;
+      let lastY = 0;
+      
+      const environments = document.querySelectorAll('.canvas-container');
+      
+      environments.forEach(env => {
+        env.addEventListener('mouseenter', () => {
+          isOverEnvironment = true;
+          trail.forEach(dot => dot.remove());
+          trail.length = 0;
+        });
+        env.addEventListener('mouseleave', () => {
+          isOverEnvironment = false;
+        });
+      });
+      
+      document.addEventListener('mousemove', (e) => {
+        if (!isOverEnvironment) {
+          // Calculate speed/direction
+          const dx = e.clientX - lastX;
+          const dy = e.clientY - lastY;
+          const speed = Math.sqrt(dx * dx + dy * dy);
+          
+          const dot = document.createElement('div');
+          dot.className = 'trail-dot';
+          
+          // Adjust size and opacity based on movement speed
+          const size = Math.min(4, 2 + speed * 0.1);
+          const opacity = Math.min(0.4, 0.2 + speed * 0.01);
+          
+          dot.style.cssText = `
+            position: fixed;
+            width: ${size}px;
+            height: ${size}px;
+            background: var(--primary-color);
+            border-radius: 50%;
+            pointer-events: none;
+            z-index: 9999;
+            opacity: ${opacity};
+            left: ${e.clientX}px;
+            top: ${e.clientY}px;
+            transform: translate(-50%, -50%);
+            transition: opacity 0.5s ease-out;
+          `;
+          
+          document.body.appendChild(dot);
+          trail.push(dot);
+          
+          if (trail.length > trailLength) {
+            const oldDot = trail.shift();
+            oldDot.style.opacity = '0';
+            setTimeout(() => oldDot.remove(), 300);
+          }
+          
+          // Fade out dots gradually
+          trail.forEach((dot, index) => {
+            dot.style.opacity = (index / trailLength) * opacity;
+          });
+          
+          lastX = e.clientX;
+          lastY = e.clientY;
+        }
+      });
+      
+      window.addEventListener('resize', () => {
+        trail.forEach(dot => dot.remove());
+        trail.length = 0;
+      });
+    }
+
+    // Update the CSS style for the new trail effect
+    const style = document.createElement('style');
+    style.textContent = `
+      .trail-dot {
+        mix-blend-mode: screen;
+        will-change: transform, opacity;
+      }
+    `;
+    document.head.appendChild(style);
+
+    createCursorTrail();
   </script>
 </body>
 </html>
