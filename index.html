@@ -272,6 +272,37 @@
     .tooltip-content.active {
       display: block;
     }
+
+    /* Export button styling */
+    .export-btn {
+      background: var(--primary-color);
+      color: #000;
+      border: var(--border-style);
+      padding: 6px 12px;
+      margin: 3px;
+      font-size: 0.85rem;
+      border-radius: 2px;
+      cursor: pointer;
+      transition: background 0.3s, transform 0.3s, box-shadow 0.3s;
+      font-weight: bold;
+    }
+
+    .export-btn:hover {
+      background: var(--hover-color);
+      transform: translateY(-2px);
+      box-shadow: 0 4px 8px rgba(255, 102, 0, 0.3);
+    }
+
+    .export-btn:active {
+      transform: translateY(0);
+      box-shadow: 0 2px 4px rgba(255, 102, 0, 0.2);
+    }
+
+    .export-group {
+      background: rgba(0, 255, 0, 0.02);
+      padding: 10px;
+      border-radius: 2px;
+    }
   </style>
 </head>
 <body>
@@ -417,6 +448,30 @@
           <option value="perlin">Perlin</option>
           <option value="worley">Worley</option>
         </select>
+      </div>
+      <!-- Heightmap Export Section -->
+      <div style="margin-top: 15px; padding-top: 15px; border-top: 1px solid #444;">
+        <p style="text-align: center; font-size: 0.9rem; color: var(--primary-color); margin-bottom: 10px;">Export Options</p>
+        <div class="export-options">
+          <div class="export-group">
+            <label style="color: #CCCCCC; font-size: 0.85rem; display: block; margin-bottom: 5px;">Heightmap Export (16-bit PNG):</label>
+            <div class="param-group" style="flex-wrap: wrap; justify-content: center; gap: 5px;">
+              <button id="exportHeightmap512" class="export-btn">512×512</button>
+              <button id="exportHeightmap1024" class="export-btn">1024×1024</button>
+              <button id="exportHeightmap2048" class="export-btn">2048×2048</button>
+              <button id="exportHeightmap4096" class="export-btn">4096×4096</button>
+              <button id="exportHeightmap8161" class="export-btn">8161×8161</button>
+            </div>
+          </div>
+          <div class="export-group" style="margin-top: 10px; padding-top: 10px; border-top: 1px solid #333;">
+            <label style="color: #CCCCCC; font-size: 0.85rem; display: block; margin-bottom: 5px;">Quick Export:</label>
+            <div class="param-group" style="flex-wrap: wrap; justify-content: center; gap: 5px;">
+              <button id="exportOBJ" class="export-btn">OBJ Mesh</button>
+              <button id="exportJSON" class="export-btn">JSON Data</button>
+              <button id="exportPreset" class="export-btn">Save Preset</button>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   </section>
@@ -582,6 +637,12 @@
   <!-- Three.js & OrbitControls -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r134/three.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/three@0.134.0/examples/js/controls/OrbitControls.js"></script>
+  
+  <!-- Pako for PNG compression -->
+  <script src="https://cdn.jsdelivr.net/npm/pako@2.1.0/dist/pako.min.js"></script>
+  
+  <!-- Import Heightmap Exporter -->
+  <script src="heightmapExporter.js"></script>
   
   <!-- 3D Cube Showcase Script -->
   <script>
@@ -996,6 +1057,10 @@
         const geometry = new THREE.PlaneGeometry(100, 100, size - 1, size - 1);
         let heightMap = generateHeightMap(size, roughness, frequency, amplitude, noiseType);
         heightMap = applyHydraulicErosion(heightMap);
+        
+        // Store heightmap for export - DEEP COPY to preserve original structure
+        heightMapData = JSON.parse(JSON.stringify(heightMap));
+        
         const vertices = geometry.attributes.position.array;
         
         for (let i = 0; i < vertices.length; i += 3) {
@@ -1067,6 +1132,65 @@
         document.getElementById("vertexCount").textContent = geometry.attributes.position.count;
         document.getElementById("triangleCount").textContent = geometry.index.count / 3;
       }
+
+      // Heightmap export buttons
+      const exportSizes = [512, 1024, 2048, 4096, 8161];
+      exportSizes.forEach(size => {
+        const buttonId = `exportHeightmap${size}`;
+        document.getElementById(buttonId).addEventListener("click", function() {
+          if (!heightMapData) {
+            alert("Please generate terrain first!");
+            return;
+          }
+          const heightScale = parseFloat(document.getElementById("heightScale").value);
+          HeightmapExporter.exportHeightmap(heightMapData, size, heightScale);
+        });
+      });
+
+      // OBJ Export
+      document.getElementById("exportOBJ").addEventListener("click", function() {
+        if (!heightMapData) {
+          alert("Please generate terrain first!");
+          return;
+        }
+        const heightScale = parseFloat(document.getElementById("heightScale").value);
+        HeightmapExporter.exportOBJ(heightMapData, heightScale);
+      });
+
+      // JSON Export
+      document.getElementById("exportJSON").addEventListener("click", function() {
+        if (!heightMapData) {
+          alert("Please generate terrain first!");
+          return;
+        }
+        const params = {
+          heightScale: parseFloat(document.getElementById("heightScale").value),
+          roughness: parseFloat(document.getElementById("terrainRoughness").value),
+          frequency: parseFloat(document.getElementById("terrainFrequency").value),
+          amplitude: parseFloat(document.getElementById("terrainAmplitude").value),
+          noiseType: document.getElementById("terrainNoiseType").value
+        };
+        HeightmapExporter.exportJSON(heightMapData, params);
+      });
+
+      // Save Preset
+      document.getElementById("exportPreset").addEventListener("click", function() {
+        if (!heightMapData) {
+          alert("Please generate terrain first!");
+          return;
+        }
+        const params = {
+          terrainSize: parseInt(document.getElementById("terrainSize").value),
+          heightScale: parseFloat(document.getElementById("heightScale").value),
+          roughness: parseFloat(document.getElementById("terrainRoughness").value),
+          frequency: parseFloat(document.getElementById("terrainFrequency").value),
+          amplitude: parseFloat(document.getElementById("terrainAmplitude").value),
+          noiseType: document.getElementById("terrainNoiseType").value
+        };
+        HeightmapExporter.savePreset(heightMapData, params);
+      });
+
+      let heightMapData = null;
 
       document.getElementById("generateTerrain").addEventListener("click", createTerrain);
       document.getElementById("toggleWireframe").addEventListener("click", function() {
@@ -1662,6 +1786,7 @@
       function updateDebugInfo() {
         if (debugMode) {
           if (blob) {
+           
             const currentLearningRate = dynamicLearningEnabled
               ? baseLearningRate * (1 / (1 + (blob.userData.score || 0) / 10))
               : baseLearningRate;
@@ -1783,17 +1908,18 @@
     });
   </script>
 
-  <script>
-    // Replace the existing createCursorTrail function with this version
+<script>
+  (function() {
+    // Create a cursor trail that is disabled over the 3D canvas environments
     function createCursorTrail() {
       const trail = [];
       const trailLength = 15;
       let isOverEnvironment = false;
       let lastX = 0;
       let lastY = 0;
-      
+
       const environments = document.querySelectorAll('.canvas-container');
-      
+
       environments.forEach(env => {
         env.addEventListener('mouseenter', () => {
           isOverEnvironment = true;
@@ -1804,72 +1930,67 @@
           isOverEnvironment = false;
         });
       });
-      
+
+      // Inject CSS for trail dots
+      const style = document.createElement('style');
+      style.textContent = `
+        .trail-dot {
+          position: fixed;
+          width: 4px;
+          height: 4px;
+          background: var(--primary-color);
+          border-radius: 50%;
+          pointer-events: none;
+          z-index: 9999;
+          mix-blend-mode: screen;
+          will-change: transform, opacity;
+          transition: opacity 0.5s ease-out, transform 0.2s linear;
+          transform: translate(-50%, -50%);
+        }
+      `;
+      document.head.appendChild(style);
+
       document.addEventListener('mousemove', (e) => {
-        if (!isOverEnvironment) {
-          // Calculate speed/direction
-          const dx = e.clientX - lastX;
-          const dy = e.clientY - lastY;
-          const speed = Math.sqrt(dx * dx + dy * dy);
-          
-          const dot = document.createElement('div');
-          dot.className = 'trail-dot';
-          
-          // Adjust size and opacity based on movement speed
-          const size = Math.min(4, 2 + speed * 0.1);
-          const opacity = Math.min(0.4, 0.2 + speed * 0.01);
-          
-          dot.style.cssText = `
-            position: fixed;
-            width: ${size}px;
-            height: ${size}px;
-            background: var(--primary-color);
-            border-radius: 50%;
-            pointer-events: none;
-            z-index: 9999;
-            opacity: ${opacity};
-            left: ${e.clientX}px;
-            top: ${e.clientY}px;
-            transform: translate(-50%, -50%);
-            transition: opacity 0.5s ease-out;
-          `;
-          
-          document.body.appendChild(dot);
-          trail.push(dot);
-          
-          if (trail.length > trailLength) {
-            const oldDot = trail.shift();
+        if (isOverEnvironment) return;
+
+        const dx = e.clientX - lastX;
+        const dy = e.clientY - lastY;
+        lastX = e.clientX;
+        lastY = e.clientY;
+
+        const speed = Math.sqrt(dx * dx + dy * dy);
+        const size = Math.max(2, Math.min(8, 2 + speed * 0.1));
+        const opacity = Math.max(0.05, Math.min(0.6, 0.2 + speed * 0.01));
+
+        const dot = document.createElement('div');
+        dot.className = 'trail-dot';
+        dot.style.width = `${size}px`;
+        dot.style.height = `${size}px`;
+        dot.style.left = `${e.clientX}px`;
+        dot.style.top = `${e.clientY}px`;
+        dot.style.opacity = `${opacity}`;
+        document.body.appendChild(dot);
+        trail.push(dot);
+
+        if (trail.length > trailLength) {
+          const oldDot = trail.shift();
+          if (oldDot) {
             oldDot.style.opacity = '0';
             setTimeout(() => oldDot.remove(), 300);
           }
-          
-          // Fade out dots gradually
-          trail.forEach((dot, index) => {
-            dot.style.opacity = (index / trailLength) * opacity;
-          });
-          
-          lastX = e.clientX;
-          lastY = e.clientY;
         }
+
+        trail.forEach((d, i) => {
+          d.style.opacity = `${((i + 1) / trail.length) * opacity}`;
+        });
       });
-      
+
       window.addEventListener('resize', () => {
         trail.forEach(dot => dot.remove());
         trail.length = 0;
       });
     }
 
-    // Update the CSS style for the new trail effect
-    const style = document.createElement('style');
-    style.textContent = `
-      .trail-dot {
-        mix-blend-mode: screen;
-        will-change: transform, opacity;
-      }
-    `;
-    document.head.appendChild(style);
-
     createCursorTrail();
-  </script>
-</body>
-</html>
+  })();
+</script>
